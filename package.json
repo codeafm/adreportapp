@@ -1,0 +1,33 @@
+{
+  "name": "bottle-sort-stats",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Статистика Bottle Sort: доход с рекламы (Яндекс, VK, Unity Ads) и игроки (Firebase)",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "start": "node server/serve.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@google-analytics/data": "^7.3.0",
+    "d3-geo": "^3.1.1",
+    "i18n-iso-countries": "^7.14.0",
+    "lucide-react": "^1.26.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "recharts": "^3.10.1",
+    "topojson-client": "^3.1.0",
+    "world-atlas": "^2.0.2"
+  },
+  "devDependencies": {
+    "@types/d3-geo": "^3.1.1",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@types/topojson-client": "^3.1.5",
+    "@vitejs/plugin-react": "^6.0.3",
+    "typescript": "^5.9.0",
+    "vite": "^8.1.1"
+  }
+}

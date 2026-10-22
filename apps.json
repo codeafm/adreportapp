@@ -1,0 +1,45 @@
+{
+  "_help": "Какие ID в Яндексе, VK и Unity — одна и та же игра. ID → платформа (Android / iOS / Web). Приложения, которых здесь нет, сайт всё равно покажет — под именем из кабинета сети. ga4 — номер ресурса Google Analytics игры (Firebase → Project settings → Integrations → Google Analytics): с ним у игры появятся игроки, онлайн и вкладка «Игроки». Сервисному аккаунту нужна роль «Читатель» в этом ресурсе.",
+  "apps": [
+    {
+      "name": "Bottle Sort",
+      "ga4": "539771462",
+      "yandex": { "19370824": "Android", "20110699": "iOS" },
+      "vk": { "3565161": "Android", "3565331": "iOS" },
+      "unity": { "6195552": "Android", "6195553": "iOS" }
+    },
+    {
+      "name": "Panda Mahjong",
+      "yandex": { "17589293": "Android" },
+      "unity": { "6204356": "Android", "6204357": "iOS" }
+    },
+    {
+      "name": "Bubble Pop",
+      "yandex": { "17156973": "Android", "20160001": "iOS" },
+      "unity": { "6199067": "Android", "6199066": "iOS" }
+    },
+    {
+      "name": "Crowd Clash",
+      "yandex": { "20083855": "Android", "20084341": "iOS" },
+      "unity": { "6198717": "Android" }
+    },
+    {
+      "name": "Pull & Rescue 3D",
+      "yandex": { "20196999": "Android", "20197847": "iOS" },
+      "unity": { "6201542": "Android" }
+    },
+    {
+      "name": "Last Tower",
+      "yandex": { "20039831": "Android", "20209470": "iOS" }
+    },
+    {
+      "name": "2048",
+      "yandex": { "15644723": "Android" },
+      "vk": { "3168126": "Android" }
+    },
+    {
+      "name": "Task Gram",
+      "vk": { "3121877": "Android" }
+    }
+  ]
+}

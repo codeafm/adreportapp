@@ -1,0 +1,12 @@
+node_modules
+dist
+# Ключи — только на компьютере и в настройках Vercel, не в git.
+.env
+.env.*
+!.env.example
+secrets/*
+!secrets/.gitkeep
+cache/
+.vercel
+*.log
+*.tsbuildinfo

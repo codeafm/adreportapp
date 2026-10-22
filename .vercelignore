@@ -1,0 +1,8 @@
+# Ключи и кэш остаются на компьютере — на Vercel они задаются в Settings → Environment Variables.
+.env
+.env.*
+!.env.example
+secrets
+cache
+node_modules
+dist
