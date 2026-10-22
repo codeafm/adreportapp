@@ -16,10 +16,11 @@
     {
       "name": "Bubble Pop",
       "yandex": { "17156973": "Android", "20160001": "iOS" },
-      "unity": { "6199067": "Android", "6199066": "iOS" }
+      "unity": { "6199066": "iOS", "6199067": "Android" }
     },
     {
       "name": "Crowd Clash",
+      "ga4": "555178082",
       "yandex": { "20083855": "Android", "20084341": "iOS" },
       "unity": { "6198717": "Android" }
     },
@@ -30,6 +31,7 @@
     },
     {
       "name": "Last Tower",
+      "ga4": "552980629",
       "yandex": { "20039831": "Android", "20209470": "iOS" }
     },
     {
@@ -39,7 +41,23 @@
     },
     {
       "name": "Task Gram",
+      "ga4": "495095378",
       "vk": { "3121877": "Android" }
+    },
+    {
+      "name": "Marge Market",
+      "ga4": "538732816",
+      "yandex": { "19323897": "Android" }
+    },
+    {
+      "name": "Duraka 36",
+      "ga4": "529743125",
+      "yandex": { "19018575": "Android" }
+    },
+    {
+      "name": "Sweet Candy Blast",
+      "ga4": "541779351",
+      "yandex": { "19441641": "Android" }
     }
   ]
 }

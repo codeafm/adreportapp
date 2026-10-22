@@ -15,7 +15,7 @@ const usd = (v) => money.format(v || 0)
 const count = (v) => int.format(Math.round(v || 0))
 const pct = (v) => Math.round(v * 100) + ' %'
 
-export function analyze({ range, rows, sources, issues, players, today }) {
+export function analyze({ range, rows, sources, issues, players, periodRows = [], today }) {
   const alerts = []
   const add = (a) => alerts.push({ app: null, network: null, ...a, id: alerts.length + ':' + a.title })
 
@@ -37,6 +37,8 @@ export function analyze({ range, rows, sources, issues, players, today }) {
         title: `${app}: уровни и кнопки рекламы в «Игроках» пока пустые`,
         text: 'В Google Analytics не зарегистрированы параметры событий. Это делается один раз: Firebase → Analytics → Custom definitions → добавить level, placement, result, after, booster. Данные появятся со следующего дня.',
       })
+
+  deadAnalytics(players, periodRows, add)
 
   // sort устойчивая: внутри уровня остаётся порядок добавления.
   return alerts.sort((a, b) => ORDER[a.level] - ORDER[b.level])
@@ -213,4 +215,23 @@ function addDays(dateStr, n) {
 
 function shortDate(iso) {
   return new Date(iso + 'T00:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
+}
+
+// ---------- аналитика молчит ----------
+
+// Firebase подключён, а игроков за период 0, хотя реклама в игре показывалась — значит, в игре не работает
+// Firebase Analytics: модуля нет, он не запускается или в сборке другой google-services.json.
+function deadAnalytics(players, periodRows, add) {
+  const revenue = new Map()
+  for (const r of periodRows) revenue.set(r.app, (revenue.get(r.app) ?? 0) + r.revenue)
+  for (const [app, p] of Object.entries(players ?? {})) {
+    const earned = revenue.get(app) ?? 0
+    if (p?.totals && p.totals.users === 0 && earned >= 0.1)
+      add({
+        level: 'warn',
+        app,
+        title: `${app}: аналитика молчит — игроков 0, а реклама приносит ${usd(earned)}`,
+        text: 'Firebase подключён к сайту, но игра не присылает в него данные. Проверьте в коде игры: есть ли модуль Firebase Analytics (во Flutter — firebase_analytics), запускается ли он при старте и тот ли google-services.json в сборке.',
+      })
+  }
 }

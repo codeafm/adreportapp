@@ -134,7 +134,7 @@ async function dashboard(env, root, range, refresh) {
   const icons = await iconsFor(root, apps.map((a) => a.bundle))
   for (const a of apps) Object.assign(a, { icon: icons[a.bundle]?.icon ?? null, iconLarge: icons[a.bundle]?.iconLarge ?? null })
   const recentRows = window ? groupApps(window.raw, catalog, []).rows : rows
-  const alerts = analyze({ range: recent, rows: recentRows, sources: main.status, issues: main.issues, players: main.players, today })
+  const alerts = analyze({ range: recent, rows: recentRows, sources: main.status, issues: main.issues, players: main.players, periodRows: rows, today })
   // Источник, который упал только на последних днях, тоже стоит показать.
   for (const [name, s] of Object.entries(watched.status)) if (main.status[name].ok && !s.ok) main.status[name] = s
 
