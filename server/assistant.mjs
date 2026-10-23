@@ -30,7 +30,8 @@ export function analyze({ range, rows, sources, issues, players, periodRows = []
 
   // players — по играм: { 'Bottle Sort': {...} }.
   for (const [app, p] of Object.entries(players ?? {}))
-    if (p?.customDefinitionsMissing)
+    // Только для игр, которые шлют наши события уровней (Unity-версия Bottle Sort): у других их просто нет.
+    if (p?.customDefinitionsMissing && (p.events?.level_start?.count ?? 0) > 0)
       add({
         level: 'info',
         app,
@@ -188,20 +189,27 @@ function emptyBlocks(rows, add) {
     // Unity отдаёт запросы без места показа — у этой строки показов не бывает, это не поломка.
     if (r.network === 'unity' && r.format === 'other') continue
     const key = r.app + '|' + r.network + '|' + r.format
-    const g = groups.get(key) ?? { app: r.app, network: r.network, format: r.format, requests: 0, impressions: 0 }
+    const g = groups.get(key) ?? { app: r.app, network: r.network, format: r.format, requests: 0, impressions: 0, responses: 0 }
     g.requests += r.requests
     g.impressions += r.impressions
+    g.responses += r.responses ?? 0
     groups.set(key, g)
   }
   for (const g of groups.values()) {
-    if (g.requests >= 200 && g.impressions === 0)
-      add({
-        level: 'warn',
-        app: g.app,
-        network: g.network,
-        title: `${g.app} · ${NET[g.network]}: «${FORMAT[g.format]}» не показывает рекламу`,
-        text: `За период ${count(g.requests)} запросов и ни одного показа. Пустые запросы портят статистику блока и снижают цену рекламы. Проверьте ID блока в игре и что блок активен в кабинете ${NET[g.network]}.`,
-      })
+    if (g.requests < 200 || g.impressions > 0) continue
+    // VK участвует в аукционе Яндекса: его «запросы» — это ставки. Отвечал рекламой, но не показался — значит,
+    // проиграл аукцион (Яндекс или Unity заплатили больше), это не поломка. Тревога — только если VK не ответил ни разу.
+    if (g.network === 'vk' && g.responses > 0) continue
+    add({
+      level: 'warn',
+      app: g.app,
+      network: g.network,
+      title: `${g.app} · ${NET[g.network]}: «${FORMAT[g.format]}» не показывает рекламу`,
+      text:
+        g.network === 'vk'
+          ? `За период ${count(g.requests)} запросов, а VK ни разу не ответил рекламой. Обычно это значит, что блок выключен, площадка на модерации или в игре указан не тот ID блока. Проверьте блок в кабинете VK.`
+          : `За период ${count(g.requests)} запросов и ни одного показа. Пустые запросы портят статистику блока и снижают цену рекламы. Проверьте ID блока в игре и что блок активен в кабинете ${NET[g.network]}.`,
+    })
   }
 }
 

@@ -456,6 +456,8 @@ async function fetchVk(env, range) {
           revenue,
           requests,
           impressions,
+          // Сколько раз VK ответил ставкой. VK в аукционе Яндекса: ответил, но проиграл — показа нет, и это нормально.
+          responses: num(r.responses ?? r.base?.responses),
         })
       }
     }
