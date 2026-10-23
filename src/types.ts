@@ -56,6 +56,9 @@ export interface Players {
   interstitial: { after: string; result: string; count: number }[]
   boosters: { booster: string; count: number }[]
   screens: { name: string; views: number }[]
+  // В GA4 не зарегистрирован level / placement: отчёт по ним недоступен.
+  levelsMissing?: boolean
+  adsMissing?: boolean
   customDefinitionsMissing: boolean
 }
 

@@ -42,7 +42,9 @@ export function PlayersSection({ players }: { players: Players }) {
         <Kpi icon={<UserPlus size={16} />} label="Новые игроки" value={count(newUsers)} hint="за период" accent="#3fd6a4" />
         <Kpi icon={<MousePointerClick size={16} />} label="Сессии" value={count(sessions)} hint={`${(sessions / Math.max(1, activeSum)).toFixed(1)} на игрока в день`} accent="#a98bff" />
         <Kpi icon={<Clock size={16} />} label="Время в игре" value={duration(engagement / Math.max(1, activeSum))} hint="в среднем на игрока в день" accent="#ffcc33" />
-        <Kpi icon={<Smartphone size={16} />} label="Прошли обучение" value={pct(ratio(tutorialDone, tutorialBegin))} hint={`${count(tutorialDone)} из ${count(tutorialBegin)}`} accent="#ff5c7a" />
+        {tutorialBegin > 0 && (
+          <Kpi icon={<Smartphone size={16} />} label="Прошли обучение" value={pct(ratio(tutorialDone, tutorialBegin))} hint={`${count(tutorialDone)} из ${count(tutorialBegin)}`} accent="#ff5c7a" />
+        )}
       </div>
       <div className="grid">
         <Card title="Активность игроков" hint="Сколько людей играло каждый день и сколько пришло новых" wide>

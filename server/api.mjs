@@ -634,7 +634,7 @@ async function fetchFirebase(client, propertyId, range) {
     }
   }
 
-  const [totals, daily, platforms, countries, adSources, events, levels, rewarded, interstitial, boosters, screens] = await Promise.all([
+  const [totals, daily, platforms, countries, adSources, events, levels, rewarded, interstitial, boosters, screens, adSteps] = await Promise.all([
     run({ metrics: [{ name: 'totalUsers' }, { name: 'newUsers' }, { name: 'sessions' }] }),
     run({
       dimensions: [{ name: 'date' }],
@@ -671,12 +671,20 @@ async function fetchFirebase(client, propertyId, range) {
       dimensionFilter: eventIn(['booster_use']),
     }),
     run({
-      dimensions: [{ name: 'unifiedScreenName' }],
+      dimensions: [{ name: 'unifiedScreenName' }, { name: 'unifiedScreenClass' }],
       metrics: [{ name: 'screenPageViews' }],
       orderBys: [{ metric: { metricName: 'screenPageViews' }, desc: true }],
-      limit: 12,
+      limit: 40,
+    }),
+    // Игры вроде Merge Market пишут рекламу шагами: <игра>_ad_show_requested / shown / reward_earned … с параметром placement.
+    optional({
+      dimensions: [{ name: 'customEvent:placement' }, { name: 'eventName' }],
+      metrics: [{ name: 'eventCount' }],
+      dimensionFilter: { filter: { fieldName: 'eventName', stringFilter: { matchType: 'FULL_REGEXP', value: '.*ad_(show_requested|shown|show_failed|reward_earned|not_ready)' } } },
+      limit: 200,
     }),
   ])
+  const steps = adStepRows(adSteps.rows)
 
   const levelMap = new Map()
   for (const r of levels.rows) {
@@ -703,16 +711,77 @@ async function fetchFirebase(client, propertyId, range) {
       adImpressions: r.m[5],
     })),
     platforms: platforms.map((r) => ({ name: r.d[0], users: r.m[0] })),
-    countries: countries.map((r) => ({ name: r.d[0], users: r.m[0] })),
+    countries: merge(countries.map((r) => ({ name: r.d[0] && r.d[0] !== '(not set)' ? r.d[0] : '(not set)', users: r.m[0] })), 'users'),
     adSources: adSources.map((r) => ({ source: r.d[0], format: r.d[1], revenue: r.m[0], impressions: r.m[1] })),
     events: Object.fromEntries(events.map((r) => [r.d[0], { count: r.m[0], users: r.m[1] }])),
     levels: [...levelMap.values()].sort((a, b) => a.level - b.level),
-    rewarded: rewarded.rows.map((r) => ({ placement: r.d[0], result: r.d[1], count: r.m[0] })),
-    interstitial: interstitial.rows.map((r) => ({ after: r.d[0], result: r.d[1], count: r.m[0] })),
+    rewarded: [...rewarded.rows.map((r) => ({ placement: r.d[0], result: r.d[1], count: r.m[0] })), ...steps.rewarded],
+    interstitial: [...interstitial.rows.map((r) => ({ after: r.d[0], result: r.d[1], count: r.m[0] })), ...steps.interstitial],
     boosters: boosters.rows.map((r) => ({ booster: r.d[0], count: r.m[0] })),
-    screens: screens.map((r) => ({ name: r.d[0], views: r.m[0] })),
-    customDefinitionsMissing: Boolean(levels.error || rewarded.error),
+    screens: merge(screens.map((r) => ({ name: screenName(r.d[0], r.d[1]), views: r.m[0] })), 'views').slice(0, 12),
+    levelsMissing: Boolean(levels.error),
+    adsMissing: Boolean(rewarded.error && adSteps.error),
+    customDefinitionsMissing: Boolean(levels.error || (rewarded.error && adSteps.error)),
   }
+}
+
+// Строки с одинаковым именем — в одну, по убыванию.
+function merge(rows, field) {
+  const byName = new Map()
+  for (const r of rows) byName.set(r.name, (byName.get(r.name) ?? 0) + r[field])
+  return [...byName].map(([name, value]) => ({ name, [field]: value })).sort((a, b) => b[field] - a[field])
+}
+
+// Игра не передаёт названия экранов — подписываем по окну Android/iOS, в котором шёл показ.
+const SCREEN_CLASS = {
+  AdActivity: 'Реклама',
+  HiddenActivity: 'Реклама',
+  FullScreenWebViewDisplay: 'Реклама',
+  MACFullscreenNativeViewController: 'Реклама',
+  ProxyBillingActivityV2: 'Покупка',
+  SKStoreProductViewController: 'Страница в App Store',
+}
+function screenName(name, screenClass) {
+  if (name && name !== '(not set)') return name
+  if (SCREEN_CLASS[screenClass]) return SCREEN_CLASS[screenClass]
+  return /Activity$|ViewController$|^$|\(not set\)/.test(screenClass ?? '') ? 'Игра (экран без названия)' : screenClass
+}
+
+// Названия мест рекламы для игр, которые шлют технические имена.
+const PLACEMENT_RU = {
+  game_rewarded: 'Продолжить после проигрыша',
+  menu_coins: 'Монеты в меню',
+  shop_coins: 'Монеты в магазине',
+  game_interstitial: 'Конец уровня',
+}
+
+// Шаги рекламы → те же строки, что у событий rewarded_ad / interstitial_ad.
+function adStepRows(rows) {
+  const byPlacement = new Map()
+  for (const r of rows) {
+    const step = r.d[1].replace(/^.*ad_/, '')
+    const entry = byPlacement.get(r.d[0]) ?? {}
+    entry[step] = (entry[step] ?? 0) + r.m[0]
+    byPlacement.set(r.d[0], entry)
+  }
+  const rewarded = []
+  const interstitial = []
+  for (const [placement, s] of byPlacement) {
+    if (!placement || placement === '(not set)') continue
+    const name = PLACEMENT_RU[placement] ?? placement
+    const shown = s.shown ?? 0
+    const failed = (s.show_failed ?? 0) + (s.not_ready ?? 0)
+    if (/interstitial/i.test(placement)) {
+      if (shown) interstitial.push({ after: name, result: 'Показана', count: shown })
+      if (failed) interstitial.push({ after: name, result: 'Не загрузилась', count: failed })
+      continue
+    }
+    const watched = s.reward_earned ?? 0
+    if (watched) rewarded.push({ placement: name, result: 'Досмотрел', count: watched })
+    if (shown > watched) rewarded.push({ placement: name, result: 'Закрыл раньше', count: shown - watched })
+    if (failed) rewarded.push({ placement: name, result: 'Не загрузилась', count: failed })
+  }
+  return { rewarded, interstitial }
 }
 
 // ---------- ключи со страницы ----------

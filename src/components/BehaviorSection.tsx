@@ -27,75 +27,87 @@ export function BehaviorSection({ players }: { players: Players }) {
   const adSourceTotal = sum(players.adSources, (a) => a.revenue)
 
   if (!players.rewarded.length && !players.interstitial.length && !players.adSources.length)
-    return <Empty>Пока нет событий рекламы от игроков — они появятся после выхода Unity-версии.</Empty>
+    return (
+      <Empty>
+        {players.adsMissing
+          ? 'Кнопки рекламы появятся, когда в Google Analytics будет зарегистрирован параметр placement (Firebase → Analytics → Custom definitions, область Event). Данные — с момента регистрации, обычно в течение суток.'
+          : 'Игра пока не присылает события рекламы — данные появятся в течение суток после первых показов.'}
+      </Empty>
+    )
 
   return (
     <div className="grid">
-      <Card title="Кнопки «за рекламу»" hint="Что игроки берут за просмотр и досматривают ли" wide>
-        <ul className="rank">
-          {rewardedRows.map((r) => (
-            <li key={r.placement} className="rank-multi">
-              <span>{r.placement}</span>
-              <div className="hbar multi">
-                {Object.entries(r.results).map(([result, n]) => (
-                  <div key={result} title={`${result}: ${count(n)}`} style={{ width: (n / maxRewarded) * 100 + '%', background: RESULT_COLOR[result] ?? '#8a94b8' }} />
-                ))}
-              </div>
-              <b>{count(r.total)}</b>
+      {rewardedRows.length > 0 && (
+        <Card title="Кнопки «за рекламу»" hint="Что игроки берут за просмотр и досматривают ли" wide>
+          <ul className="rank">
+            {rewardedRows.map((r) => (
+              <li key={r.placement} className="rank-multi">
+                <span>{r.placement}</span>
+                <div className="hbar multi">
+                  {Object.entries(r.results).map(([result, n]) => (
+                    <div key={result} title={`${result}: ${count(n)}`} style={{ width: (n / maxRewarded) * 100 + '%', background: RESULT_COLOR[result] ?? '#8a94b8' }} />
+                  ))}
+                </div>
+                <b>{count(r.total)}</b>
+              </li>
+            ))}
+            <li className="total">
+              <span>Итого</span>
+              <span />
+              <b>{count(sum(rewardedRows, (r) => r.total))}</b>
             </li>
-          ))}
-          <li className="total">
-            <span>Итого</span>
-            <span />
-            <b>{count(sum(rewardedRows, (r) => r.total))}</b>
-          </li>
-        </ul>
-        <div className="chips-legend">
-          {['Досмотрел', 'Закрыл раньше', 'Не загрузилась'].map((r) => (
-            <span key={r}>
-              <span className="dot" style={{ background: RESULT_COLOR[r] }} /> {r}
-            </span>
-          ))}
-        </div>
-      </Card>
-      <Card title="Межстраничная реклама" hint="Должна была выйти — вышла или нет">
-        <div className="big-number">{pct(ratio(shown, shown + missed))}</div>
-        <p className="muted">
-          показана {count(shown)} раз, не успела загрузиться {count(missed)} раз
-        </p>
-        <ul className="legend-list">
-          {players.interstitial.map((r) => (
-            <li key={r.after + r.result}>
-              <span className="dot" style={{ background: RESULT_COLOR[r.result] ?? '#ff5c7a' }} />
-              <span>
-                после «{r.after}» — {r.result.toLowerCase()}
+          </ul>
+          <div className="chips-legend">
+            {['Досмотрел', 'Закрыл раньше', 'Не загрузилась'].map((r) => (
+              <span key={r}>
+                <span className="dot" style={{ background: RESULT_COLOR[r] }} /> {r}
               </span>
-              <b>{count(r.count)}</b>
+            ))}
+          </div>
+        </Card>
+      )}
+      {players.interstitial.length > 0 && (
+        <Card title="Межстраничная реклама" hint="Должна была выйти — вышла или нет">
+          <div className="big-number">{pct(ratio(shown, shown + missed))}</div>
+          <p className="muted">
+            показана {count(shown)} раз, не успела загрузиться {count(missed)} раз
+          </p>
+          <ul className="legend-list">
+            {players.interstitial.map((r) => (
+              <li key={r.after + r.result}>
+                <span className="dot" style={{ background: RESULT_COLOR[r.result] ?? '#ff5c7a' }} />
+                <span>
+                  после «{r.after}» — {r.result.toLowerCase()}
+                </span>
+                <b>{count(r.count)}</b>
+              </li>
+            ))}
+            <li className="total">
+              <span />
+              <span>Итого</span>
+              <b>{count(shown + missed)}</b>
             </li>
-          ))}
-          <li className="total">
-            <span />
-            <span>Итого</span>
-            <b>{count(shown + missed)}</b>
-          </li>
-        </ul>
-      </Card>
-      <Card title="Бустеры" hint="Чем пользуются чаще">
-        <ul className="rank">
-          {players.boosters.map((b) => (
-            <li key={b.booster}>
-              <span>{b.booster}</span>
-              <Bar value={b.count} max={maxBooster} color="#ff9a3d" />
-              <b>{count(b.count)}</b>
+          </ul>
+        </Card>
+      )}
+      {players.boosters.length > 0 && (
+        <Card title="Бустеры" hint="Чем пользуются чаще">
+          <ul className="rank">
+            {players.boosters.map((b) => (
+              <li key={b.booster}>
+                <span>{b.booster}</span>
+                <Bar value={b.count} max={maxBooster} color="#ff9a3d" />
+                <b>{count(b.count)}</b>
+              </li>
+            ))}
+            <li className="total">
+              <span>Итого</span>
+              <span />
+              <b>{count(sum(players.boosters, (b) => b.count))}</b>
             </li>
-          ))}
-          <li className="total">
-            <span>Итого</span>
-            <span />
-            <b>{count(sum(players.boosters, (b) => b.count))}</b>
-          </li>
-        </ul>
-      </Card>
+          </ul>
+        </Card>
+      )}
       {players.adSources.length > 0 && (
         <Card title="Доход по сетям — по данным игры" hint="Оценка дохода с каждого показа, которую присылают сами сети (Firebase)">
           <table>

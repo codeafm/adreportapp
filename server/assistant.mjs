@@ -36,7 +36,7 @@ export function analyze({ range, rows, sources, issues, players, periodRows = []
         level: 'info',
         app,
         title: `${app}: уровни и кнопки рекламы в «Игроках» пока пустые`,
-        text: 'В Google Analytics не зарегистрированы параметры событий. Это делается один раз: Firebase → Analytics → Custom definitions → добавить level, placement, result, after, booster. Данные появятся со следующего дня.',
+        text: 'В Google Analytics не зарегистрированы параметры событий. Это делается один раз: Firebase → Analytics → Custom definitions → добавить level и placement (а у Bottle Sort ещё result, after, booster). Данные появятся со следующего дня.',
       })
 
   deadAnalytics(players, periodRows, add)

@@ -4,13 +4,15 @@ import { count, pct, ratio, sum } from '../format'
 import { axis, Card, Empty, grid, tooltipStyle } from './ui'
 
 export function LevelsSection({ players }: { players: Players }) {
-  if (players.customDefinitionsMissing && !players.levels.length)
+  const sendsLevels = (players.events.level_start?.count ?? 0) > 0
+  if (!sendsLevels && !players.levels.length) return <Empty>Игра не присылает события уровней (level_start, level_complete, level_fail).</Empty>
+  if ((players.levelsMissing ?? players.customDefinitionsMissing) && !players.levels.length)
     return (
       <Empty>
-        Уровни появятся, когда в Google Analytics будут зарегистрированы параметры событий (level, placement, result…). Как это сделать — Docs/ANALYTICS.md в проекте игры, раздел «Один раз настроить в консоли».
+        Игра присылает уровни, но в Google Analytics не зарегистрирован параметр level. Firebase → Analytics → Custom definitions → Create custom dimension: level, область Event.
       </Empty>
     )
-  if (!players.levels.length) return <Empty>Пока нет событий уровней — они появятся после выхода Unity-версии.</Empty>
+  if (!players.levels.length) return <Empty>Параметр level зарегистрирован — уровни начнут появляться с новыми данными, обычно в течение суток.</Empty>
 
   const levels = players.levels.slice(0, 120).map((l) => ({
     ...l,
