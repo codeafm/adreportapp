@@ -1,5 +1,5 @@
 import type { Players } from '../types'
-import { count, pct, ratio, sum, usd } from '../format'
+import { count, pct, ratio, sum, usd, usdPrecise } from '../format'
 import { Bar, Card, Empty } from './ui'
 
 const RESULT_COLOR: Record<string, string> = {
@@ -8,6 +8,9 @@ const RESULT_COLOR: Record<string, string> = {
   'Не загрузилась': '#ff5c7a',
   Показана: '#3fd6a4',
 }
+
+// Доход с отдельных показов — доли цента: 0,00 $ ничего не говорит, показываем третий знак.
+const money = (v: number) => (v > 0 && v < 1 ? usdPrecise(v) : usd(v))
 
 export function BehaviorSection({ players }: { players: Players }) {
   const placements = new Map<string, Record<string, number>>()
@@ -25,8 +28,10 @@ export function BehaviorSection({ players }: { players: Players }) {
   const missed = sum(players.interstitial.filter((r) => r.result !== 'Показана'), (r) => r.count)
   const maxBooster = Math.max(1, ...players.boosters.map((b) => b.count))
   const adSourceTotal = sum(players.adSources, (a) => a.revenue)
+  const loads = players.adLoads
+  const loaded = loads ? ratio(loads.requested - loads.failed, loads.requested) : NaN
 
-  if (!players.rewarded.length && !players.interstitial.length && !players.adSources.length)
+  if (!players.rewarded.length && !players.interstitial.length && !players.adSources.length && !loads)
     return (
       <Empty>
         {players.adsMissing
@@ -36,6 +41,12 @@ export function BehaviorSection({ players }: { players: Players }) {
     )
 
   return (
+    <>
+    {(players.unlabeledAds ?? 0) > 0 && (
+      <p className="muted small unlabeled-note">
+        {count(players.unlabeledAds ?? 0)} показов рекламы пришли без названия места — до регистрации параметров в Google Analytics, поэтому в карточках ниже их нет. Новые показы подписываются сами.
+      </p>
+    )}
     <div className="grid">
       {rewardedRows.length > 0 && (
         <Card title="Кнопки «за рекламу»" hint="Что игроки берут за просмотр и досматривают ли" wide>
@@ -90,6 +101,17 @@ export function BehaviorSection({ players }: { players: Players }) {
           </ul>
         </Card>
       )}
+      {loads && (
+        <Card title="Загрузка рекламы" hint="Сколько раз игра просила рекламу у сети и сколько раз та загрузилась">
+          <div className="big-number" style={{ color: loaded >= 0.7 ? 'var(--good)' : loaded >= 0.4 ? 'var(--warn)' : 'var(--bad)' }}>
+            {pct(loaded)}
+          </div>
+          <p className="muted">
+            загрузилась {count(loads.requested - loads.failed)} из {count(loads.requested)} раз, не загрузилась {count(loads.failed)}
+          </p>
+          <p className="muted small">Не загрузилась — у сети не нашлось рекламы или не было связи. Чем реже это бывает, тем больше показов и денег.</p>
+        </Card>
+      )}
       {players.boosters.length > 0 && (
         <Card title="Бустеры" hint="Чем пользуются чаще">
           <ul className="rank">
@@ -127,7 +149,7 @@ export function BehaviorSection({ players }: { players: Players }) {
                     <td className="strong">{a.source || '—'}</td>
                     <td>{a.format || '—'}</td>
                     <td className="num">
-                      {usd(a.revenue)} <span className="muted small">{pct(ratio(a.revenue, adSourceTotal))}</span>
+                      {money(a.revenue)} <span className="muted small">{pct(ratio(a.revenue, adSourceTotal))}</span>
                     </td>
                     <td className="num">{count(a.impressions)}</td>
                   </tr>
@@ -138,7 +160,7 @@ export function BehaviorSection({ players }: { players: Players }) {
                 <td className="strong" colSpan={2}>
                   Итого
                 </td>
-                <td className="num strong">{usd(adSourceTotal)}</td>
+                <td className="num strong">{money(adSourceTotal)}</td>
                 <td className="num strong">{count(sum(players.adSources, (a) => a.impressions))}</td>
               </tr>
             </tfoot>
@@ -146,5 +168,6 @@ export function BehaviorSection({ players }: { players: Players }) {
         </Card>
       )}
     </div>
+    </>
   )
 }

@@ -36,10 +36,12 @@ export function analyze({ range, rows, sources, issues, players, periodRows = []
         level: 'info',
         app,
         title: `${app}: уровни и кнопки рекламы в «Игроках» пока пустые`,
-        text: 'В Google Analytics не зарегистрированы параметры событий. Это делается один раз: Firebase → Analytics → Custom definitions → добавить level и placement (а у Bottle Sort ещё result, after, booster). Данные появятся со следующего дня.',
+        text: 'В Google Analytics не зарегистрированы параметры событий. Это делается один раз: Firebase → Analytics → Custom definitions → добавить level и placement (у Bottle Sort ещё result, after, booster, у Merge Market — trigger и booster). Данные появятся со следующего дня.',
       })
 
   deadAnalytics(players, periodRows, add)
+  lostInterstitials(players, add)
+  failedSaves(players, add)
 
   // sort устойчивая: внутри уровня остаётся порядок добавления.
   return alerts.sort((a, b) => ORDER[a.level] - ORDER[b.level])
@@ -241,5 +243,44 @@ function deadAnalytics(players, periodRows, add) {
         title: `${app}: аналитика молчит — игроков 0, а реклама приносит ${usd(earned)}`,
         text: 'Firebase подключён к сайту, но игра не присылает в него данные. Проверьте в коде игры: есть ли модуль Firebase Analytics (во Flutter — firebase_analytics), запускается ли он при старте и тот ли google-services.json в сборке.',
       })
+  }
+}
+
+// ---------- реклама не успевает загрузиться ----------
+
+// Игра хотела показать межстраничную, а та ещё не загрузилась: показа нет — и денег за него тоже.
+function lostInterstitials(players, add) {
+  for (const [app, p] of Object.entries(players ?? {})) {
+    const rows = p?.interstitial ?? []
+    const shown = rows.filter((r) => r.result === 'Показана').reduce((a, r) => a + r.count, 0)
+    const missed = rows.filter((r) => r.result !== 'Показана').reduce((a, r) => a + r.count, 0)
+    const share = div(missed, shown + missed)
+    if (shown + missed < 100 || share < 0.3) continue
+    // Где теряется больше всего.
+    const byMoment = new Map()
+    for (const r of rows) if (r.result !== 'Показана') byMoment.set(r.after, (byMoment.get(r.after) ?? 0) + r.count)
+    const [worst] = [...byMoment].sort((a, b) => b[1] - a[1])
+    add({
+      level: 'warn',
+      app,
+      title: `${app}: межстраничная реклама не выходит в ${pct(share)} случаев`,
+      text: `За период игра ${count(shown + missed)} раз хотела показать межстраничную рекламу, но ${count(missed)} раз она ещё не загрузилась — эти показы и деньги потеряны. Загружайте следующую рекламу сразу после показа предыдущей и повторяйте загрузку после ошибки через несколько секунд.`,
+      detail: worst ? `Больше всего потерь: после «${worst[0]}» — ${count(worst[1])}.` : undefined,
+    })
+  }
+}
+
+// ---------- прогресс не сохраняется ----------
+
+function failedSaves(players, add) {
+  for (const [app, p] of Object.entries(players ?? {})) {
+    const failed = p?.events?.save_failed
+    if (!failed?.count) continue
+    add({
+      level: 'warn',
+      app,
+      title: `${app}: ${count(failed.count)} раз не сохранился прогресс`,
+      text: `У ${count(failed.users)} игроков игра не смогла записать сохранение (событие save_failed). Такие игроки теряют пройденное и чаще удаляют игру. Проверьте запись сохранения в коде: что будет, если память телефона заполнена или запись прервалась.`,
+    })
   }
 }

@@ -31,6 +31,25 @@ export function isoDate(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+// Сайт живёт по московскому времени, как отчёты Яндекса: «сегодня», «вчера» и месяц — по Москве,
+// в какой бы стране ни открыли страницу. Та же зона — на сервере (todayMsk в server/api.mjs).
+export const TIME_ZONE = 'Europe/Moscow'
+const mskDay = new Intl.DateTimeFormat('en-CA', { timeZone: TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit' })
+const mskTime = new Intl.DateTimeFormat('ru-RU', { timeZone: TIME_ZONE, hour: '2-digit', minute: '2-digit' })
+
+// Сегодняшняя дата в Москве: '2026-10-25'.
+export function todayIso() {
+  return mskDay.format(new Date())
+}
+
+// Время по Москве: «14:05 МСК».
+export function mskClock(at: string | number) {
+  return mskTime.format(new Date(at)) + ' МСК'
+}
+
+// Дата '2026-10-25' → полночь этого дня по часам браузера: для счёта дней, без часовых поясов.
+const day = (iso: string) => new Date(iso + 'T00:00:00')
+
 export function daysBetween(from: string, to: string) {
   const out: string[] = []
   const d = new Date(from + 'T00:00:00')
@@ -54,9 +73,9 @@ export const QUICK_PERIODS: { key: Period; label: string }[] = [
   { key: '90d', label: '90 дней' },
 ]
 
-export function periodRange(p: Period): { from: string; to: string } {
-  const today = new Date()
-  const now = isoDate(today)
+// now — сегодняшняя дата по Москве (todayIso); передаётся, чтобы период сменился сам после полуночи.
+export function periodRange(p: Period, now = todayIso()): { from: string; to: string } {
+  const today = day(now)
   if (p === 'today') return { from: now, to: now }
   if (p === 'yesterday') {
     const d = new Date(today)
@@ -76,8 +95,9 @@ export function periodRange(p: Period): { from: string; to: string } {
   return { from: isoDate(new Date(y, m - 1, 1)), to: isoDate(last < today ? last : today) }
 }
 
-export function monthKey(d: Date) {
-  return isoDate(d).slice(0, 7)
+// Месяц даты '2026-10-25' → '2026-10'.
+export function monthKey(iso: string) {
+  return iso.slice(0, 7)
 }
 
 export function monthName(key: string) {
@@ -87,9 +107,9 @@ export function monthName(key: string) {
 }
 
 // Прошлые месяцы для списка «Другой месяц»: текущий — это кнопка «Этот месяц».
-export function pastMonths(count = 12) {
-  const now = new Date()
-  return Array.from({ length: count }, (_, i) => monthKey(new Date(now.getFullYear(), now.getMonth() - i - 1, 1)))
+export function pastMonths(count = 12, now = todayIso()) {
+  const today = day(now)
+  return Array.from({ length: count }, (_, i) => monthKey(isoDate(new Date(today.getFullYear(), today.getMonth() - i - 1, 1))))
 }
 
 export const sum = <T,>(list: T[], pick: (t: T) => number) => list.reduce((a, t) => a + (pick(t) || 0), 0)

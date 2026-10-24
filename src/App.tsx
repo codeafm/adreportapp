@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, BarChart3, Flag, Gamepad2, LogOut, RefreshCw, Sparkles, Users } from 'lucide-react'
+import { ArrowLeft, BarChart3, Flag, Gamepad2, LogOut, RefreshCw, ShoppingBag, Sparkles, Users } from 'lucide-react'
 import type { Dashboard, Platform, SourceName } from './types'
 import { NETWORKS } from './types'
 import { demoDashboard } from './demo'
-import { isoDate, longDate, monthKey, monthName, pastMonths, periodRange, QUICK_PERIODS, sum } from './format'
+import { longDate, mskClock, monthKey, monthName, pastMonths, periodRange, QUICK_PERIODS, sum, todayIso } from './format'
 import type { Period } from './format'
 import { SetupPanel, SourceBar } from './components/Sources'
 import { NetworkFormatTable, RevenueCharts, RevenueKpis } from './components/AdsSection'
@@ -14,6 +14,7 @@ import { Login } from './components/Login'
 import { PlayersSection } from './components/PlayersSection'
 import { LevelsSection } from './components/LevelsSection'
 import { BehaviorSection } from './components/BehaviorSection'
+import { ActionsSection, hasActions } from './components/ActionsSection'
 import { AppIcon, Empty, SectionTitle } from './components/ui'
 
 type PlatformFilter = 'all' | Platform
@@ -46,8 +47,15 @@ function remember(key: string, value: string | number) {
   }
 }
 
-function clock(at: string) {
-  return new Date(at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+// Сегодняшняя дата по Москве. Страницу оставили открытой на ночь — после полуночи период «Сегодня»
+// сам переходит на новый день, а не застывает на вчерашнем.
+function useToday() {
+  const [today, setToday] = useState(todayIso)
+  useEffect(() => {
+    const id = window.setInterval(() => setToday(todayIso()), 30_000)
+    return () => window.clearInterval(id)
+  }, [])
+  return today
 }
 
 // Играют прямо сейчас — по данным Firebase за последние 30 минут.
@@ -67,7 +75,7 @@ function LiveBadge({ at }: { at: string }) {
     return () => window.clearInterval(id)
   }, [])
   const sec = Math.max(0, Math.round((now - Date.parse(at)) / 1000))
-  const ago = sec < 15 ? 'только что' : sec < 60 ? `${sec} с назад` : sec < 3600 ? `${Math.floor(sec / 60)} мин назад` : 'в ' + clock(at)
+  const ago = sec < 15 ? 'только что' : sec < 60 ? `${sec} с назад` : sec < 3600 ? `${Math.floor(sec / 60)} мин назад` : 'в ' + mskClock(at)
   return (
     <span className="live" title="Обновляется само: Яндекс — каждые 10 секунд, VK и Unity — раз в 5 минут">
       <span className="live-dot" /> в реальном времени · обновлено {ago}
@@ -77,14 +85,15 @@ function LiveBadge({ at }: { at: string }) {
 
 export default function App() {
   // По умолчанию — этот месяц, с 1-го числа по сегодня.
+  const today = useToday()
   const [period, setPeriod] = useState<Period>(() => {
     const p = stored<Period>('bs.period', 'month')
-    if (p === monthKey(new Date())) return 'month'
+    if (p === monthKey(todayIso())) return 'month'
     // Старые сохранённые значения (например, «14 дней») — на «Этот месяц».
     return QUICK_PERIODS.some((q) => q.key === p) || /^\d{4}-\d{2}$/.test(p) ? p : 'month'
   })
-  const range = useMemo(() => periodRange(period), [period])
-  const months = useMemo(() => pastMonths(), [])
+  const range = useMemo(() => periodRange(period, today), [period, today])
+  const months = useMemo(() => pastMonths(12, today), [today])
   const pastMonth = /^\d{4}-\d{2}$/.test(period)
   const [platform, setPlatform] = useState<PlatformFilter>(() => stored<PlatformFilter>('bs.platform', 'all'))
   // Пустая строка — все приложения.
@@ -139,7 +148,12 @@ export default function App() {
     load()
   }, [load])
 
-  const live = range.to === isoDate(new Date()) && !showDemo && !needLogin
+  // На телефоне периоды — одна строка с прокруткой: выбранный должен быть виден, а не за краем.
+  useEffect(() => {
+    document.querySelector('.periods .seg .on')?.scrollIntoView({ inline: 'nearest', block: 'nearest' })
+  }, [period])
+
+  const live = range.to === today && !showDemo && !needLogin
   useEffect(() => {
     if (!live) return
     const visible = () => document.visibilityState === 'visible'
@@ -305,9 +319,9 @@ export default function App() {
 
       {view && !(nothingConnected && !showDemo) && (
         <main>
-          <p className="range muted">
+          <p className="range muted" title="Дни считаются по московскому времени — как в отчётах Яндекса">
             {view.range.from === view.range.to ? longDate(view.range.from) : `${longDate(view.range.from)} — ${longDate(view.range.to)}`}
-            {!showDemo && view.generatedAt && (live ? <LiveBadge at={updatedAt ?? view.generatedAt} /> : <> · обновлено {clock(view.generatedAt)}</>)}
+            {!showDemo && view.generatedAt && (live ? <LiveBadge at={updatedAt ?? view.generatedAt} /> : <> · обновлено {mskClock(view.generatedAt)}</>)}
             {onlineTotal != null && !app && <OnlineChip n={onlineTotal} />}
           </p>
 
@@ -378,6 +392,13 @@ export default function App() {
 
                   <SectionTitle icon={<BarChart3 size={20} />} title="Реклама глазами игроков" hint="Какие кнопки «за рекламу» нажимают и выходит ли межстраничная" />
                   {appPlayers ? <BehaviorSection players={appPlayers} /> : <Empty>Появится после подключения Firebase.</Empty>}
+
+                  {appPlayers && hasActions(appPlayers) && (
+                    <>
+                      <SectionTitle icon={<ShoppingBag size={20} />} title="Экономика и действия" hint="Что игроки покупают, забирают и нажимают в игре" />
+                      <ActionsSection players={appPlayers} />
+                    </>
+                  )}
                 </>
               )}
             </>

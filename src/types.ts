@@ -46,7 +46,9 @@ export interface LevelRow {
 export interface Players {
   // Всего за период: уникальные игроки, новые, сессии.
   totals: { users: number; newUsers: number; sessions: number }
-  daily: { date: string; activeUsers: number; newUsers: number; sessions: number; engagementSec: number; adRevenue: number; adImpressions: number }[]
+  // uninstalls — удалили игру в этот день (Android шлёт app_remove сам).
+  daily: { date: string; activeUsers: number; newUsers: number; sessions: number; engagementSec: number; adRevenue: number; adImpressions: number; uninstalls?: number }[]
+  // Страны — по-русски, как в доходе.
   platforms: { name: string; users: number }[]
   countries: { name: string; users: number }[]
   adSources: { source: string; format: string; revenue: number; impressions: number }[]
@@ -56,6 +58,10 @@ export interface Players {
   interstitial: { after: string; result: string; count: number }[]
   boosters: { booster: string; count: number }[]
   screens: { name: string; views: number }[]
+  // Загрузки рекламы (шаги <игра>_ad_load_requested / load_failed): сколько раз просили у сети и сколько не загрузилось.
+  adLoads?: { requested: number; failed: number } | null
+  // Показы рекламы без названия места: пришли до регистрации параметра в GA4, в карточки не попали.
+  unlabeledAds?: number
   // В GA4 не зарегистрирован level / placement: отчёт по ним недоступен.
   levelsMissing?: boolean
   adsMissing?: boolean
@@ -76,6 +82,8 @@ export interface Dashboard {
   alerts: Alert[]
   // На сервере включён вход — показываем кнопку «Выйти».
   auth?: boolean
+  // Сайт работает на Vercel: ключи там задаются в настройках Vercel, а не со страницы.
+  cloud?: boolean
   demo?: boolean
 }
 

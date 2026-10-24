@@ -3,7 +3,7 @@ import { Bar as RBar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, Resp
 import { BadgeDollarSign, Eye, Gauge, Percent, TrendingUp, Wallet } from 'lucide-react'
 import type { AdRow, Dashboard, Format, Network } from '../types'
 import { FORMATS, NETWORKS } from '../types'
-import { count, cpm, daysBetween, isoDate, monthName, pct, ratio, shortDate, sum, usd, usdPrecise } from '../format'
+import { count, cpm, daysBetween, monthName, pct, ratio, shortDate, sum, todayIso, usd, usdPrecise } from '../format'
 import { axis, Card, Empty, grid, Kpi, tooltipStyle } from './ui'
 
 // Четыре главные цифры периода: сколько заработали, темп, вчера, цена показа.
@@ -24,7 +24,7 @@ export function RevenueKpis({ data, rows, view = '' }: { data: Dashboard; rows: 
     )
   const activeDays = new Set(rows.filter((r) => r.revenue > 0).map((r) => r.date)).size || 1
 
-  const endsToday = to === isoDate(new Date())
+  const endsToday = to === todayIso()
 
   // Один день («Сегодня», «Вчера»): среднее и «вчера» тут не к месту — показываем сам день.
   if (from === to)

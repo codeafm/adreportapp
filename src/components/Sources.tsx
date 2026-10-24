@@ -52,20 +52,22 @@ const STEPS: Record<SourceName, { title: string; steps: string[]; fields: Field[
     steps: [
       'Unity Cloud → Unity Ads Monetization → «Настройки» → API management.',
       'В блоке «Monetization Stats API Access» скопируйте ключ (или нажмите Create Api Key).',
-      'Вставьте в поле ниже. Все игры организации сайт найдёт сам.',
+      'Вставьте ключ и номер организации (Organization ID — в адресе Unity Cloud после /organizations/). Все игры организации сайт найдёт сам.',
     ],
-    fields: [{ name: 'UNITY_API_KEY', label: 'Ключ Monetization Stats API', placeholder: 'вставьте ключ', kind: 'secret' }],
+    fields: [
+      { name: 'UNITY_API_KEY', label: 'Ключ Monetization Stats API', placeholder: 'вставьте ключ', kind: 'secret' },
+      { name: 'UNITY_ORG_ID', label: 'Organization ID', placeholder: '18968334641592', kind: 'text' },
+    ],
     link: { href: 'https://cloud.unity.com/home/organizations/18968334641592', text: 'Открыть Unity Cloud' },
   },
   firebase: {
     title: 'Firebase — игроки, уровни, кнопки рекламы',
     steps: [
-      'Firebase → проект bottle-sort-23297 → ⚙ Project settings → Integrations → Google Analytics: номер ресурса (Property ID) — в первое поле.',
-      'Google Cloud → IAM → Service Accounts → создайте сервисный аккаунт → Keys → Add key → JSON. Выберите этот файл во втором поле.',
-      'Google Analytics → Администратор → Управление доступом к ресурсу → добавьте email сервисного аккаунта с ролью «Читатель».',
+      'Google Cloud → IAM → Service Accounts → создайте сервисный аккаунт → Keys → Add key → JSON. Выберите этот файл в поле ниже — он один на все игры.',
+      'У каждой игры свой ресурс Google Analytics: Firebase → проект игры → ⚙ Project settings → Integrations → Google Analytics → номер ресурса (Property ID). Впишите его в apps.json как "ga4" у этой игры.',
+      'Google Analytics → Администратор → Управление доступом к ресурсу → добавьте email сервисного аккаунта с ролью «Читатель» — в каждом ресурсе (или сразу во всём аккаунте).',
     ],
     fields: [
-      { name: 'GA4_PROPERTY_ID', label: 'Property ID ресурса Google Analytics', placeholder: '123456789', kind: 'text' },
       { name: 'GA_SERVICE_ACCOUNT_JSON', label: 'Ключ сервисного аккаунта (JSON-файл)', placeholder: '', kind: 'json' },
     ],
     link: { href: 'https://console.firebase.google.com/project/bottle-sort-23297/settings/integrations', text: 'Открыть Firebase' },
@@ -127,6 +129,12 @@ export function SetupPanel({ source, data, onClose, onSaved }: { source: SourceN
             {info.link.text} ↗
           </a>
         )}
+        {data.cloud ? (
+          <p className="muted">
+            Это сайт в интернете: ключи здесь задаются в Vercel → Settings → Environment Variables, затем Deployments → Redeploy. С компьютера их переносит команда <code>npm run vercel:env</code>.
+          </p>
+        ) : (
+          <>
         <div className="fields">
           {info.fields.map((f) => (
             <label key={f.name} className="field">
@@ -154,6 +162,8 @@ export function SetupPanel({ source, data, onClose, onSaved }: { source: SourceN
         </button>
         {message && <p className={message.startsWith('Сохранено') ? 'ok-text' : 'error-text'}>{message}</p>}
         <p className="muted small">Ключ сохранится в файл .env (или secrets) только на этом компьютере. Страница его больше не показывает и никуда не отправляет.</p>
+          </>
+        )}
       </div>
     </div>
   )

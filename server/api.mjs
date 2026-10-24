@@ -31,13 +31,16 @@ export function createApi(env, root) {
 
       if (url.pathname === '/api/dashboard') {
         const refresh = url.searchParams.get('refresh') === '1'
-        sendJson(res, 200, { ...(await dashboard(env, root, parseRange(url.searchParams), refresh)), auth: Boolean(env.DASHBOARD_PASSWORD) })
+        sendJson(res, 200, { ...(await dashboard(env, root, parseRange(url.searchParams), refresh)), auth: Boolean(env.DASHBOARD_PASSWORD), cloud: cloud(env) })
       } else if (url.pathname === '/api/settings' && req.method === 'POST') {
         // Ключи принимаем только с этого же компьютера: сайт для себя, наружу его не открываем.
         if (cloud(env)) {
           sendJson(res, 403, { error: 'На Vercel ключи задаются в Vercel → Settings → Environment Variables' })
         } else if (!isLocal(req)) {
           sendJson(res, 403, { error: 'Ключи можно сохранять только с этого компьютера' })
+        } else if (!sameOrigin(req)) {
+          // Чужая страница в браузере тоже ходит «с этого компьютера» — её запрос выдаёт заголовок Origin.
+          sendJson(res, 403, { error: 'Ключи можно сохранять только со страницы этого сайта' })
         } else {
           const { name, value } = JSON.parse((await readBody(req)) || '{}')
           if (!EDITABLE.includes(name)) {
@@ -60,13 +63,20 @@ export function createApi(env, root) {
 
 // ---------- вход ----------
 // Один владелец: email и пароль — в переменных DASHBOARD_EMAIL и DASHBOARD_PASSWORD (на Vercel — в его настройках,
-// в коде их нет). После входа — cookie с подписью от пароля: сменили пароль — все старые входы недействительны.
+// в коде их нет). После входа — cookie «срок.подпись» с подписью от пароля: через 30 дней вход нужен заново,
+// сменили пароль — все старые входы недействительны сразу.
 
 const SESSION = 'ar_session'
+const SESSION_DAYS = 30
 const cloud = (env) => Boolean(env.VERCEL)
 
+function sign(env, expires) {
+  return crypto.createHmac('sha256', `${env.DASHBOARD_EMAIL}\n${env.DASHBOARD_PASSWORD}`).update('adreport-session-v2:' + expires).digest('hex')
+}
+
 function sessionToken(env) {
-  return crypto.createHmac('sha256', `${env.DASHBOARD_EMAIL}\n${env.DASHBOARD_PASSWORD}`).update('adreport-session-v1').digest('hex')
+  const expires = Date.now() + SESSION_DAYS * 24 * 3600 * 1000
+  return `${expires}.${sign(env, expires)}`
 }
 
 function same(a, b) {
@@ -80,7 +90,8 @@ function signedIn(env, req) {
     .split(';')
     .map((c) => c.trim().split('='))
     .find(([k]) => k === SESSION)?.[1]
-  return Boolean(cookie) && same(cookie, sessionToken(env))
+  const [expires, signature] = String(cookie ?? '').split('.')
+  return Number(expires) > Date.now() && same(signature, sign(env, expires))
 }
 
 async function login(env, req, res) {
@@ -97,7 +108,7 @@ async function login(env, req, res) {
     await new Promise((r) => setTimeout(r, 1500))
     return sendJson(res, 401, { error: 'Неверный email или пароль' })
   }
-  res.setHeader('Set-Cookie', `${SESSION}=${sessionToken(env)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 24 * 3600}${cloud(env) ? '; Secure' : ''}`)
+  res.setHeader('Set-Cookie', `${SESSION}=${sessionToken(env)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_DAYS * 24 * 3600}${cloud(env) ? '; Secure' : ''}`)
   sendJson(res, 200, { ok: true })
 }
 
@@ -105,7 +116,7 @@ async function login(env, req, res) {
 // Будущие дни отрезаем — данных за них ещё нет.
 function parseRange(q) {
   const isDate = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v ?? '')
-  const today = ymd(new Date())
+  const today = todayMsk()
   let to = isDate(q.get('to')) ? q.get('to') : today
   if (to > today) to = today
   let from = isDate(q.get('from')) ? q.get('from') : addDays(to, -(clamp(parseInt(q.get('days') || '14', 10) || 14, 1, 90) - 1))
@@ -118,7 +129,7 @@ function parseRange(q) {
 async function dashboard(env, root, range, refresh) {
   // Помощник всегда смотрит на последние 8 дней — что бы ни было выбрано («Сегодня», прошлый месяц).
   // Если выбранный период их уже включает, второй раз сети не спрашиваем.
-  const today = ymd(new Date())
+  const today = todayMsk()
   const recent = { from: addDays(today, -8), to: today, days: 9 }
   const covers = range.from <= recent.from && range.to >= recent.to
   const catalog = await loadCatalog(root)
@@ -153,10 +164,10 @@ async function dashboard(env, root, range, refresh) {
 const SECOND = 1000
 const MINUTE = 60 * SECOND
 function ttlFor(name, range) {
-  if (name === 'firebase') return range.to < ymd(new Date()) ? 30 * MINUTE : 5 * MINUTE
+  if (name === 'firebase') return range.to < todayMsk() ? 30 * MINUTE : 5 * MINUTE
   // Страны — для разбора, а не для «живых» цифр: хватает раз в 5 минут.
-  if (name.endsWith('geo')) return range.to < ymd(new Date()) ? 30 * MINUTE : 5 * MINUTE
-  if (range.to < ymd(new Date())) return 30 * MINUTE
+  if (name.endsWith('geo')) return range.to < todayMsk() ? 30 * MINUTE : 5 * MINUTE
+  if (range.to < todayMsk()) return 30 * MINUTE
   if (name === 'yandex') return range.days > YANDEX_MAX_DAYS ? MINUTE : 10 * SECOND
   return 5 * MINUTE
 }
@@ -613,41 +624,124 @@ async function fetchOnline(env, root, props) {
   return out
 }
 
+// Google разрешает не больше 10 одновременных запросов к одному ресурсу GA4, а у игры больше десятка отчётов,
+// плюс «онлайн» и второй период. Поэтому к одному ресурсу — не больше 5 запросов сразу, остальные ждут очереди.
+const gaQueues = new Map()
+function gaLimit(propertyId) {
+  if (!gaQueues.has(propertyId)) gaQueues.set(propertyId, queue(5))
+  return gaQueues.get(propertyId)
+}
+
+function queue(size) {
+  let active = 0
+  const waiting = []
+  const next = () => {
+    if (active >= size || !waiting.length) return
+    active++
+    const { task, resolve, reject } = waiting.shift()
+    task()
+      .then(resolve, reject)
+      .finally(() => {
+        active--
+        next()
+      })
+  }
+  return (task) =>
+    new Promise((resolve, reject) => {
+      waiting.push({ task, resolve, reject })
+      next()
+    })
+}
+
+// Пустой свой параметр: событие пришло до регистрации параметра в GA4 или игра его не передала.
+const unset = (v) => !v || v === '(not set)'
+
+// Что игроки делают в игре — раздел «Экономика и действия» (src/components/ActionsSection.tsx). Названия — как
+// в справочниках событий игр (у Merge Market — docs/analytics_events.md). Чего игра не шлёт, на сайте просто нет.
+const ACTION_EVENTS = [
+  'level_continue',
+  'level_resume',
+  'order_complete',
+  'progress_reset',
+  'box_buy',
+  'cell_unlock',
+  'gift_collect',
+  'booster_buy',
+  'shop_upgrade',
+  'coins_exchange',
+  'district_offer',
+  'district_purchase',
+  'daily_bonus_claimed',
+  'achievement_claimed',
+  'welcome_bonus_claimed',
+  'save_failed',
+  'notification_receive',
+  'notification_open',
+  'notification_tap',
+  'notification_dismiss',
+]
+
 async function fetchFirebase(client, propertyId, range) {
   const property = `properties/${propertyId}`
   const dateRanges = [{ startDate: range.from, endDate: range.to }]
+  const limit = gaLimit(propertyId)
   const run = async (request) => {
-    const [report] = await client.runReport({ property, dateRanges, ...request })
+    const [report] = await limit(() => client.runReport({ property, dateRanges, ...request }))
     return (report.rows ?? []).map((row) => ({
       d: (row.dimensionValues ?? []).map((v) => v.value ?? ''),
       m: (row.metricValues ?? []).map((v) => num(v.value)),
     }))
   }
   const eventIn = (names) => ({ filter: { fieldName: 'eventName', inListFilter: { values: names } } })
-  // Отчёты по своим параметрам (уровень, кнопка рекламы) работают, только когда параметры
-  // зарегистрированы в GA4 как custom definitions. Пока нет — показываем подсказку, а не ошибку.
+  const eventLike = (regexp) => ({ filter: { fieldName: 'eventName', stringFilter: { matchType: 'FULL_REGEXP', value: regexp } } })
+  // Отчёты по своим параметрам (уровень, место рекламы) работают, только когда параметры зарегистрированы в GA4
+  // как custom definitions. Нет параметра — Google отвечает INVALID_ARGUMENT, и сайт подсказывает, что зарегистрировать.
+  // Другой сбой (квота, связь) — не повод для такого совета: пробуем ещё раз, потом просто без этого отчёта.
   const optional = async (request) => {
-    try {
-      return { rows: await run(request), error: null }
-    } catch (e) {
-      return { rows: [], error: String(e?.message || e) }
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return { rows: await run(request), missing: false }
+      } catch (e) {
+        if (/INVALID_ARGUMENT|not a valid dimension/i.test(String(e?.message || e))) return { rows: [], missing: true }
+        if (attempt >= 2) return { rows: [], missing: false }
+        await new Promise((r) => setTimeout(r, 1500))
+      }
     }
   }
 
-  const [totals, daily, platforms, countries, adSources, events, levels, rewarded, interstitial, boosters, screens, adSteps] = await Promise.all([
+  const [totals, daily, removed, platforms, countries, adSources, events, levels, rewarded, interstitial, boosters, screens, adSteps, moments] = await Promise.all([
     run({ metrics: [{ name: 'totalUsers' }, { name: 'newUsers' }, { name: 'sessions' }] }),
     run({
       dimensions: [{ name: 'date' }],
       metrics: ['activeUsers', 'newUsers', 'sessions', 'userEngagementDuration', 'totalAdRevenue', 'publisherAdImpressions'].map((name) => ({ name })),
       orderBys: [{ dimension: { dimensionName: 'date' } }],
     }),
+    // Удаления игры Android присылает сам (событие app_remove) — у любой игры с Firebase Analytics.
+    run({ dimensions: [{ name: 'date' }], metrics: [{ name: 'eventCount' }], dimensionFilter: eventIn(['app_remove']) }),
     run({ dimensions: [{ name: 'platform' }], metrics: [{ name: 'activeUsers' }] }),
-    run({ dimensions: [{ name: 'country' }], metrics: [{ name: 'activeUsers' }], orderBys: [{ metric: { metricName: 'activeUsers' }, desc: true }], limit: 12 }),
+    // countryId — код страны (RU, TJ): русское название даёт geo.mjs, как у стран в доходе.
+    run({ dimensions: [{ name: 'countryId' }], metrics: [{ name: 'activeUsers' }], orderBys: [{ metric: { metricName: 'activeUsers' }, desc: true }], limit: 12 }),
     run({ dimensions: [{ name: 'adSourceName' }, { name: 'adFormat' }], metrics: [{ name: 'totalAdRevenue' }, { name: 'publisherAdImpressions' }] }),
     run({
       dimensions: [{ name: 'eventName' }],
       metrics: [{ name: 'eventCount' }, { name: 'totalUsers' }],
-      dimensionFilter: eventIn(['tutorial_begin', 'tutorial_complete', 'level_start', 'level_complete', 'level_fail', 'level_restart', 'booster_use', 'rewarded_ad', 'interstitial_ad', 'ad_impression', 'earn_virtual_currency', 'spend_virtual_currency']),
+      dimensionFilter: eventIn([
+        'first_open',
+        'app_remove',
+        'tutorial_begin',
+        'tutorial_complete',
+        'level_start',
+        'level_complete',
+        'level_fail',
+        'level_restart',
+        'booster_use',
+        'rewarded_ad',
+        'interstitial_ad',
+        'ad_impression',
+        'earn_virtual_currency',
+        'spend_virtual_currency',
+        ...ACTION_EVENTS,
+      ]),
     }),
     optional({
       dimensions: [{ name: 'customEvent:level' }, { name: 'eventName' }],
@@ -676,15 +770,22 @@ async function fetchFirebase(client, propertyId, range) {
       orderBys: [{ metric: { metricName: 'screenPageViews' }, desc: true }],
       limit: 40,
     }),
-    // Игры вроде Merge Market пишут рекламу шагами: <игра>_ad_show_requested / shown / reward_earned … с параметром placement.
+    // Игры вроде Merge Market пишут рекламу шагами: <игра>_ad_load_requested / shown / reward_earned … с параметром placement.
     optional({
       dimensions: [{ name: 'customEvent:placement' }, { name: 'eventName' }],
       metrics: [{ name: 'eventCount' }],
-      dimensionFilter: { filter: { fieldName: 'eventName', stringFilter: { matchType: 'FULL_REGEXP', value: '.*ad_(show_requested|shown|show_failed|reward_earned|not_ready)' } } },
-      limit: 200,
+      dimensionFilter: eventLike('.*ad_(show_requested|shown|show_failed|reward_earned|not_ready|load_requested|load_failed)'),
+      limit: 300,
+    }),
+    // Момент показа межстраничной (trigger у Merge Market): победа → дальше, проигрыш → «Повторить», выход с уровня.
+    optional({
+      dimensions: [{ name: 'customEvent:trigger' }, { name: 'eventName' }],
+      metrics: [{ name: 'eventCount' }],
+      dimensionFilter: eventLike('.*ad_(shown|show_failed|not_ready)'),
+      limit: 100,
     }),
   ])
-  const steps = adStepRows(adSteps.rows)
+  const steps = adStepRows(adSteps.rows, moments.rows)
 
   const levelMap = new Map()
   for (const r of levels.rows) {
@@ -699,6 +800,12 @@ async function fetchFirebase(client, propertyId, range) {
     levelMap.set(level, entry)
   }
 
+  // Кнопки и межстраничная без названия места пришли до регистрации параметров — в карточки их не ставим,
+  // иначе «(not set)» выглядит как отдельная кнопка, а у межстраничной портит долю показов. Сколько их — пишем рядом.
+  const named = (rows) => rows.filter((r) => !unset(r.d[0]) && !unset(r.d[1]))
+  const unnamed = (rows) => rows.reduce((a, r) => a + (unset(r.d[0]) || unset(r.d[1]) ? r.m[0] : 0), 0)
+  const uninstalls = new Map(removed.map((r) => [r.d[0], r.m[0]]))
+
   return {
     totals: { users: totals[0]?.m[0] ?? 0, newUsers: totals[0]?.m[1] ?? 0, sessions: totals[0]?.m[2] ?? 0 },
     daily: daily.map((r) => ({
@@ -709,19 +816,22 @@ async function fetchFirebase(client, propertyId, range) {
       engagementSec: r.m[3],
       adRevenue: r.m[4],
       adImpressions: r.m[5],
+      uninstalls: uninstalls.get(r.d[0]) ?? 0,
     })),
     platforms: platforms.map((r) => ({ name: r.d[0], users: r.m[0] })),
-    countries: merge(countries.map((r) => ({ name: r.d[0] && r.d[0] !== '(not set)' ? r.d[0] : '(not set)', users: r.m[0] })), 'users'),
+    countries: merge(countries.map((r) => ({ name: country(unset(r.d[0]) ? '' : r.d[0]).name, users: r.m[0] })), 'users'),
     adSources: adSources.map((r) => ({ source: r.d[0], format: r.d[1], revenue: r.m[0], impressions: r.m[1] })),
     events: Object.fromEntries(events.map((r) => [r.d[0], { count: r.m[0], users: r.m[1] }])),
     levels: [...levelMap.values()].sort((a, b) => a.level - b.level),
-    rewarded: [...rewarded.rows.map((r) => ({ placement: r.d[0], result: r.d[1], count: r.m[0] })), ...steps.rewarded],
-    interstitial: [...interstitial.rows.map((r) => ({ after: r.d[0], result: r.d[1], count: r.m[0] })), ...steps.interstitial],
-    boosters: boosters.rows.map((r) => ({ booster: r.d[0], count: r.m[0] })),
+    rewarded: [...named(rewarded.rows).map((r) => ({ placement: r.d[0], result: r.d[1], count: r.m[0] })), ...steps.rewarded],
+    interstitial: [...named(interstitial.rows).map((r) => ({ after: r.d[0], result: r.d[1], count: r.m[0] })), ...steps.interstitial],
+    boosters: boosters.rows.filter((r) => !unset(r.d[0])).map((r) => ({ booster: BOOSTER_RU[r.d[0]] ?? r.d[0], count: r.m[0] })),
     screens: merge(screens.map((r) => ({ name: screenName(r.d[0], r.d[1]), views: r.m[0] })), 'views').slice(0, 12),
-    levelsMissing: Boolean(levels.error),
-    adsMissing: Boolean(rewarded.error && adSteps.error),
-    customDefinitionsMissing: Boolean(levels.error || (rewarded.error && adSteps.error)),
+    adLoads: steps.loads.requested ? steps.loads : null,
+    unlabeledAds: unnamed(rewarded.rows) + unnamed(interstitial.rows) + steps.unlabeled,
+    levelsMissing: levels.missing,
+    adsMissing: rewarded.missing && adSteps.missing,
+    customDefinitionsMissing: levels.missing || (rewarded.missing && adSteps.missing),
   }
 }
 
@@ -753,27 +863,75 @@ const PLACEMENT_RU = {
   menu_coins: 'Монеты в меню',
   shop_coins: 'Монеты в магазине',
   game_interstitial: 'Конец уровня',
+  booster_time: 'Бустер времени',
+  booster_box: 'Бустер коробки',
+  booster_unlock: 'Бустер открытия',
+  booster_delete: 'Бустер удаления',
+  game_booster: 'Бустер за рекламу',
 }
 
-// Шаги рекламы → те же строки, что у событий rewarded_ad / interstitial_ad.
-function adStepRows(rows) {
+// Момент показа межстраничной (параметр trigger у Merge Market).
+const TRIGGER_RU = {
+  inter_win_next: 'Победа → следующий уровень',
+  inter_win_map: 'Победа → карта',
+  inter_fail_retry: 'Проигрыш → «Повторить»',
+  inter_fail_map: 'Проигрыш → карта',
+  inter_leave_level: 'Выход с уровня',
+}
+
+// Бустеры, которые игры шлют техническими именами (booster_use у Merge Market).
+const BOOSTER_RU = { time: 'Время', box: 'Коробка', unlock: 'Открытие полки', delete: 'Удаление' }
+
+// Шаги рекламы → те же строки, что у событий rewarded_ad / interstitial_ad. Плюс загрузки: сколько раз игра
+// просила рекламу у сети и сколько раз та не загрузилась. Шаги без места показа (пришли до регистрации
+// placement) в кнопки не попадают — их показы идут в unlabeled.
+function adStepRows(rows, triggerRows = []) {
   const byPlacement = new Map()
+  const loads = { requested: 0, failed: 0 }
+  let unlabeled = 0
   for (const r of rows) {
-    const step = r.d[1].replace(/^.*ad_/, '')
-    const entry = byPlacement.get(r.d[0]) ?? {}
-    entry[step] = (entry[step] ?? 0) + r.m[0]
-    byPlacement.set(r.d[0], entry)
+    // mm_ad_load_requested → load_requested (в «load» тоже есть «ad_», поэтому — до первого «ad_»).
+    const step = r.d[1].replace(/^(.*?_)?ad_/, '')
+    if (step === 'load_requested') loads.requested += r.m[0]
+    else if (step === 'load_failed') loads.failed += r.m[0]
+    else if (unset(r.d[0])) unlabeled += step === 'shown' ? r.m[0] : 0
+    else {
+      const entry = byPlacement.get(r.d[0]) ?? {}
+      entry[step] = (entry[step] ?? 0) + r.m[0]
+      byPlacement.set(r.d[0], entry)
+    }
   }
+
+  // Момент показа межстраничной: inter_win_next → { shown, failed }.
+  const moments = new Map()
+  for (const r of triggerRows) {
+    if (!/^inter_/.test(r.d[0])) continue
+    const m = moments.get(r.d[0]) ?? { shown: 0, failed: 0 }
+    if (/ad_shown$/.test(r.d[1])) m.shown += r.m[0]
+    else m.failed += r.m[0]
+    moments.set(r.d[0], m)
+  }
+
   const rewarded = []
   const interstitial = []
   for (const [placement, s] of byPlacement) {
-    if (!placement || placement === '(not set)') continue
     const name = PLACEMENT_RU[placement] ?? placement
     const shown = s.shown ?? 0
     const failed = (s.show_failed ?? 0) + (s.not_ready ?? 0)
     if (/interstitial/i.test(placement)) {
-      if (shown) interstitial.push({ after: name, result: 'Показана', count: shown })
-      if (failed) interstitial.push({ after: name, result: 'Не загрузилась', count: failed })
+      // Есть момент показа — делим по нему. Что пришло без момента (старая версия игры), остаётся строкой места.
+      let restShown = shown
+      let restFailed = failed
+      for (const [trigger, m] of moments) {
+        const after = TRIGGER_RU[trigger] ?? trigger
+        if (m.shown) interstitial.push({ after, result: 'Показана', count: m.shown })
+        if (m.failed) interstitial.push({ after, result: 'Не загрузилась', count: m.failed })
+        restShown -= m.shown
+        restFailed -= m.failed
+      }
+      moments.clear()
+      if (restShown > 0) interstitial.push({ after: name, result: 'Показана', count: restShown })
+      if (restFailed > 0) interstitial.push({ after: name, result: 'Не загрузилась', count: restFailed })
       continue
     }
     const watched = s.reward_earned ?? 0
@@ -781,7 +939,7 @@ function adStepRows(rows) {
     if (shown > watched) rewarded.push({ placement: name, result: 'Закрыл раньше', count: shown - watched })
     if (failed) rewarded.push({ placement: name, result: 'Не загрузилась', count: failed })
   }
-  return { rewarded, interstitial }
+  return { rewarded, interstitial, loads, unlabeled }
 }
 
 // ---------- ключи со страницы ----------
@@ -826,6 +984,16 @@ async function writeEnvLine(root, name, value) {
 function isLocal(req) {
   const ip = req.socket?.remoteAddress || ''
   return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1'
+}
+
+function sameOrigin(req) {
+  const origin = req.headers.origin
+  if (!origin) return true
+  try {
+    return new URL(origin).host === req.headers.host
+  } catch {
+    return false
+  }
 }
 
 function readBody(req) {
@@ -894,6 +1062,13 @@ function clamp(v, lo, hi) {
 
 function ymd(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+// Сайт живёт по московскому времени, как отчёты Яндекса: «сегодня» одно и то же на Vercel (там UTC),
+// на компьютере и в браузере в любой стране. Та же зона — в src/format.ts.
+const mskDay = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Moscow', year: 'numeric', month: '2-digit', day: '2-digit' })
+function todayMsk() {
+  return mskDay.format(new Date())
 }
 
 function addDays(dateStr, n) {

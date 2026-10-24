@@ -45,7 +45,7 @@
       "vk": { "3121877": "Android" }
     },
     {
-      "name": "Marge Market",
+      "name": "Merge Market",
       "ga4": "538732816",
       "yandex": { "19323897": "Android" }
     },
@@ -58,6 +58,14 @@
       "name": "Sweet Candy Blast",
       "ga4": "541779351",
       "yandex": { "19441641": "Android" }
+    },
+    {
+      "name": "True or False",
+      "yandex": { "3364852": "Android" }
+    },
+    {
+      "name": "Rush Geometry",
+      "yandex": { "17521443": "Android" }
     }
   ]
 }

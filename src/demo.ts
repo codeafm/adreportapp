@@ -135,6 +135,7 @@ export function demoDashboard(from: string, to: string): Dashboard {
             engagementSec: activeUsers * (1100 + r() * 300),
             adRevenue: 6 + r() * 2,
             adImpressions: Math.round(9000 + r() * 1500),
+            uninstalls: Math.round(30 + r() * 20),
           }
         }),
         platforms: [
@@ -142,12 +143,12 @@ export function demoDashboard(from: string, to: string): Dashboard {
           { name: 'iOS', users: 320 },
         ],
         countries: [
-          { name: 'Russia', users: 2600 },
-          { name: 'Tajikistan', users: 640 },
-          { name: 'Uzbekistan', users: 420 },
-          { name: 'Kazakhstan', users: 310 },
-          { name: 'Belarus', users: 180 },
-          { name: 'Kyrgyzstan', users: 140 },
+          { name: 'Россия', users: 2600 },
+          { name: 'Таджикистан', users: 640 },
+          { name: 'Узбекистан', users: 420 },
+          { name: 'Казахстан', users: 310 },
+          { name: 'Беларусь', users: 180 },
+          { name: 'Киргизия', users: 140 },
         ],
         adSources: [
           { source: 'Yandex', format: 'Interstitial', revenue: 48, impressions: 9500 },
